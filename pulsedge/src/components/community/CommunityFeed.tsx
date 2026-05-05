@@ -15,6 +15,20 @@ function timeAgo(iso: string): string {
   return `${Math.floor(diff / 86400)}d`;
 }
 
+async function fetchMessages(
+  client: ReturnType<typeof createClient>,
+  setMessages: React.Dispatch<React.SetStateAction<CommunityMessage[]>>,
+  bottomRef: React.RefObject<HTMLDivElement>
+) {
+  const { data } = await client
+    .from('community_messages')
+    .select('*')
+    .order('created_at', { ascending: true })
+    .limit(50);
+  setMessages((data as CommunityMessage[]) ?? []);
+  setTimeout(() => bottomRef.current?.scrollIntoView(), 50);
+}
+
 function Avatar({ username, isBot }: { username: string; isBot: boolean }) {
   if (isBot)
     return (
@@ -53,46 +67,42 @@ export function CommunityFeed() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
-  // Stable client ref — never recreated on re-render
-  const supabase = useRef(createClient()).current;
+  // Stable client used only for auth and posting
+  const authClient = useRef(createClient()).current;
   const isVerified = user?.email_confirmed_at != null;
   const canPost = !!user && isVerified;
 
+  // Auth listener — uses stable authClient
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, s) =>
+    authClient.auth.getUser().then(({ data }) => setUser(data.user));
+    const { data: listener } = authClient.auth.onAuthStateChange((_e, s) =>
       setUser(s?.user ?? null)
     );
     return () => listener.subscription.unsubscribe();
-  }, [supabase]);
+  }, [authClient]);
 
+  // Realtime subscription — fresh client created inside effect
+  // so it is never shared with another subscribed channel
   useEffect(() => {
-    supabase
-      .from('community_messages')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .limit(50)
-      .then(({ data }) => {
-        setMessages((data as CommunityMessage[]) ?? []);
-        setTimeout(() => bottomRef.current?.scrollIntoView(), 50);
-      });
+    const supabaseClient = createClient();
 
-    const channel = supabase
+    fetchMessages(supabaseClient, setMessages, bottomRef);
+
+    const channel = supabaseClient
       .channel('community_feed')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'community_messages' },
         (payload) => {
-          const newMessage = payload.new as CommunityMessage;
-          setMessages((prev) => [...prev, newMessage]);
+          setMessages((prev) => [...prev, payload.new as CommunityMessage]);
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabaseClient.removeChannel(channel);
     };
-  }, [supabase]);
+  }, []);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -104,7 +114,7 @@ export function CommunityFeed() {
     setSending(true);
     setError('');
     const username = user!.email?.split('@')[0] ?? 'anon';
-    const { error: err } = await supabase.from('community_messages').insert({
+    const { error: err } = await authClient.from('community_messages').insert({
       user_id: user!.id,
       username,
       message: text,
@@ -116,7 +126,7 @@ export function CommunityFeed() {
     } else {
       setInput('');
     }
-  }, [input, canPost, sending, user, supabase]);
+  }, [input, canPost, sending, user, authClient]);
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -159,9 +169,7 @@ export function CommunityFeed() {
               Verify your email to post.{' '}
               <button
                 className="underline hover:no-underline"
-                onClick={() =>
-                  supabase.auth.resend({ type: 'signup', email: user.email! })
-                }
+                onClick={() => authClient.auth.resend({ type: 'signup', email: user.email! })}
               >
                 Resend email
               </button>
@@ -189,14 +197,9 @@ export function CommunityFeed() {
             <div className="flex gap-2">
               <textarea
                 value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  setError('');
-                }}
+                onChange={(e) => { setInput(e.target.value); setError(''); }}
                 onKeyDown={handleKey}
-                placeholder={
-                  canPost ? 'Share your thoughts… (Enter to send)' : 'Verify email to post'
-                }
+                placeholder={canPost ? 'Share your thoughts… (Enter to send)' : 'Verify email to post'}
                 disabled={!canPost}
                 rows={1}
                 maxLength={280}
@@ -212,11 +215,7 @@ export function CommunityFeed() {
               </button>
             </div>
             {input.length > 240 && (
-              <p
-                className={`text-[10px] text-right ${
-                  input.length > 280 ? 'text-red-400' : 'text-slate-500'
-                }`}
-              >
+              <p className={`text-[10px] text-right ${input.length > 280 ? 'text-red-400' : 'text-slate-500'}`}>
                 {input.length}/280
               </p>
             )}
