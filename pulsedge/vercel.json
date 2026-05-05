@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/analysis/generate",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/bot?type=morning",
+      "schedule": "0 8 * * 1-5"
+    },
+    {
+      "path": "/api/bot?type=midday",
+      "schedule": "0 12 * * 1-5"
+    },
+    {
+      "path": "/api/bot?type=evening",
+      "schedule": "0 17 * * 1-5"
+    }
+  ]
+}
