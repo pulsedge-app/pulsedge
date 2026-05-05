@@ -53,7 +53,8 @@ export function CommunityFeed() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
-  const supabase = createClient();
+  // Stable client ref — never recreated on re-render
+  const supabase = useRef(createClient()).current;
   const isVerified = user?.email_confirmed_at != null;
   const canPost = !!user && isVerified;
 
@@ -63,7 +64,7 @@ export function CommunityFeed() {
       setUser(s?.user ?? null)
     );
     return () => listener.subscription.unsubscribe();
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     supabase
@@ -82,8 +83,8 @@ export function CommunityFeed() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'community_messages' },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new as CommunityMessage]);
-          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+          const newMessage = payload.new as CommunityMessage;
+          setMessages((prev) => [...prev, newMessage]);
         }
       )
       .subscribe();
@@ -91,7 +92,7 @@ export function CommunityFeed() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [supabase]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
