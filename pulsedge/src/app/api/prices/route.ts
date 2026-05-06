@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const url = `${TD_BASE}/quote?symbol=${encodeURIComponent(symbols)}&apikey=${apiKey}`;
-    const res = await fetch(url, { next: { revalidate: 0 } });
+    const res = await fetch(url, { next: { revalidate: 300 } });
     const raw = await res.json();
 
     // Twelve Data returns a single object when one symbol, nested objects when multiple
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(result, {
-      headers: { 'Cache-Control': 'no-store' },
+      headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=60' },
     });
   } catch {
     return NextResponse.json({}, { status: 500 });

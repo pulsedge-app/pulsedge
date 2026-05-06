@@ -33,7 +33,7 @@ export function TickerBar() {
     }
 
     fetch30s();
-    const id = setInterval(fetch30s, 30_000);
+    const id = setInterval(fetch30s, 300_000);
     return () => clearInterval(id);
   }, []);
 

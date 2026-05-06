@@ -7,7 +7,7 @@ export async function getQuote(symbol: string): Promise<QuoteData | null> {
   try {
     const res = await fetch(
       `${BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&apikey=${API_KEY}`,
-      { next: { revalidate: 60 } }
+      { next: { revalidate: 300 } }
     );
     const data = await res.json();
     if (data.status === 'error' || !data.close) return null;
