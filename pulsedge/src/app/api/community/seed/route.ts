@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 const SEED_MESSAGES = [
   {
@@ -35,9 +40,7 @@ const SEED_MESSAGES = [
 ];
 
 async function runSeed() {
-  const supabase = createClient();
-
-  const { count } = await supabase
+  const { count } = await supabaseAdmin
     .from('community_messages')
     .select('*', { count: 'exact', head: true });
 
@@ -54,7 +57,7 @@ async function runSeed() {
     created_at: new Date(now - m.offset_minutes * 60_000).toISOString(),
   }));
 
-  const { error } = await supabase.from('community_messages').insert(rows);
+  const { error } = await supabaseAdmin.from('community_messages').insert(rows);
   if (error) return NextResponse.json({ seeded: false, error: error.message }, { status: 500 });
 
   return NextResponse.json({ seeded: true, count: rows.length });
