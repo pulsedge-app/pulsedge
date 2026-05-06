@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Send, Bot, AlertCircle, CheckCircle } from 'lucide-react';
+import { Send, Bot, AlertCircle, CheckCircle, Heart, Users } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { CommunityMessage } from '@/types';
 import type { User } from '@supabase/supabase-js';
@@ -17,6 +17,7 @@ function timeAgo(iso: string): string {
 
 async function fetchMessages(
   client: ReturnType<typeof createClient>,
+  userId: string | null,
   setMessages: React.Dispatch<React.SetStateAction<CommunityMessage[]>>,
   bottomRef: React.RefObject<HTMLDivElement>
 ) {
@@ -25,36 +26,92 @@ async function fetchMessages(
     .select('*')
     .order('created_at', { ascending: true })
     .limit(50);
-  setMessages((data as CommunityMessage[]) ?? []);
+
+  if (!data) return;
+
+  const messages = data as CommunityMessage[];
+
+  // Fetch reaction counts
+  const { data: reactions } = await client
+    .from('community_reactions')
+    .select('message_id, user_id')
+    .in('message_id', messages.map((m) => m.id));
+
+  const counts: Record<string, number> = {};
+  const userReacted: Record<string, boolean> = {};
+  (reactions ?? []).forEach((r: { message_id: string; user_id: string }) => {
+    counts[r.message_id] = (counts[r.message_id] ?? 0) + 1;
+    if (userId && r.user_id === userId) userReacted[r.message_id] = true;
+  });
+
+  const enriched = messages.map((m) => ({
+    ...m,
+    reaction_count: counts[m.id] ?? 0,
+    user_reacted: userReacted[m.id] ?? false,
+  }));
+
+  setMessages(enriched);
   setTimeout(() => bottomRef.current?.scrollIntoView(), 50);
 }
 
 function Avatar({ username, isBot }: { username: string; isBot: boolean }) {
-  if (isBot)
+  if (isBot) {
     return (
-      <div className="w-7 h-7 rounded-full bg-teal/20 border border-teal/30 flex items-center justify-center shrink-0">
-        <Bot className="w-3.5 h-3.5 text-teal" />
+      <div className="w-6 h-6 rounded-full bg-teal/20 border border-teal/30 flex items-center justify-center shrink-0">
+        <Bot className="w-3 h-3 text-teal" />
       </div>
     );
+  }
+  const colors = ['bg-violet-600', 'bg-blue-600', 'bg-emerald-600', 'bg-orange-600', 'bg-pink-600', 'bg-cyan-600'];
+  const color = colors[username.charCodeAt(0) % colors.length];
   return (
-    <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center shrink-0 text-xs font-semibold uppercase text-slate-300">
+    <div className={`w-6 h-6 rounded-full ${color} flex items-center justify-center shrink-0 text-[10px] font-bold uppercase text-white`}>
       {username[0]}
     </div>
   );
 }
 
-function MessageRow({ msg }: { msg: CommunityMessage }) {
+function MessageRow({
+  msg,
+  canReact,
+  onReact,
+}: {
+  msg: CommunityMessage;
+  canReact: boolean;
+  onReact: (id: string) => void;
+}) {
   return (
-    <div className="flex gap-2.5 py-2 px-3 hover:bg-white/[0.02] rounded-lg transition-colors">
+    <div className="flex gap-2.5 py-2 px-3 hover:bg-white/[0.02] rounded-lg transition-colors group">
       <Avatar username={msg.username} isBot={msg.is_bot} />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5">
           <span className={`text-xs font-semibold ${msg.is_bot ? 'text-teal' : 'text-slate-200'}`}>
             {msg.username}
           </span>
-          <span className="text-[10px] text-slate-600">{timeAgo(msg.created_at)}</span>
+          {msg.is_bot && <Bot className="w-2.5 h-2.5 text-teal" />}
+          <span className="text-[10px] text-slate-700">{timeAgo(msg.created_at)}</span>
         </div>
         <p className="text-xs text-slate-400 leading-relaxed mt-0.5 break-words">{msg.message}</p>
+
+        {/* Reaction */}
+        <div className="flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={() => canReact && onReact(msg.id)}
+            disabled={!canReact}
+            className={`flex items-center gap-1 text-[10px] transition-colors disabled:cursor-default ${
+              msg.user_reacted
+                ? 'text-red-400'
+                : canReact
+                ? 'text-slate-600 hover:text-red-400'
+                : 'text-slate-700'
+            }`}
+          >
+            <Heart className="w-3 h-3" fill={msg.user_reacted ? 'currentColor' : 'none'} />
+            {(msg.reaction_count ?? 0) > 0 && (
+              <span>{msg.reaction_count}</span>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -66,13 +123,13 @@ export function CommunityFeed() {
   const [user, setUser] = useState<User | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [onlineCount, setOnlineCount] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
-  // Stable client used only for auth and posting
   const authClient = useRef(createClient()).current;
   const isVerified = user?.email_confirmed_at != null;
   const canPost = !!user && isVerified;
 
-  // Auth listener — uses stable authClient
+  // Auth
   useEffect(() => {
     authClient.auth.getUser().then(({ data }) => setUser(data.user));
     const { data: listener } = authClient.auth.onAuthStateChange((_e, s) =>
@@ -81,36 +138,86 @@ export function CommunityFeed() {
     return () => listener.subscription.unsubscribe();
   }, [authClient]);
 
-  // Realtime subscription — fresh client created inside effect
-  // so it is never shared with another subscribed channel
+  // Realtime messages — isolated client
   useEffect(() => {
-    const supabaseClient = createClient();
+    const supabase = createClient();
+    const userId = user?.id ?? null;
 
-    fetchMessages(supabaseClient, setMessages, bottomRef);
+    fetchMessages(supabase, userId, setMessages, bottomRef);
 
-    const channel = supabaseClient
+    const channel = supabase
       .channel('community_feed')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'community_messages' },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new as CommunityMessage]);
+          setMessages((prev) => [
+            ...prev,
+            { ...(payload.new as CommunityMessage), reaction_count: 0, user_reacted: false },
+          ]);
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
         }
       )
       .subscribe();
 
-    return () => {
-      supabaseClient.removeChannel(channel);
-    };
-  }, []);
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
+
+  // Presence — isolated client
+  useEffect(() => {
+    const supabase = createClient();
+    const presenceKey = user?.id ?? `anon-${Math.random().toString(36).slice(2, 8)}`;
+
+    const channel = supabase.channel('community_presence', {
+      config: { presence: { key: presenceKey } },
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        setOnlineCount(Object.keys(channel.presenceState()).length);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
+
+  const toggleReaction = useCallback(async (messageId: string) => {
+    if (!canPost) return;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              user_reacted: !m.user_reacted,
+              reaction_count: (m.reaction_count ?? 0) + (m.user_reacted ? -1 : 1),
+            }
+          : m
+      )
+    );
+
+    if (!user) return;
+    const msg = messages.find((m) => m.id === messageId);
+    if (msg?.user_reacted) {
+      await authClient
+        .from('community_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', user.id);
+    } else {
+      await authClient
+        .from('community_reactions')
+        .insert({ message_id: messageId, user_id: user.id });
+    }
+  }, [authClient, canPost, messages, user]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || !canPost || sending) return;
-    if (text.length > 280) {
-      setError('Max 280 characters');
-      return;
-    }
+    if (text.length > 280) { setError('Max 280 characters'); return; }
     setSending(true);
     setError('');
     const username = user!.email?.split('@')[0] ?? 'anon';
@@ -121,41 +228,48 @@ export function CommunityFeed() {
       is_bot: false,
     });
     setSending(false);
-    if (err) {
-      setError('Failed to send. Try again.');
-    } else {
-      setInput('');
-    }
+    if (err) setError('Failed to send. Try again.');
+    else setInput('');
   }, [input, canPost, sending, user, authClient]);
 
   function handleKey(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
   return (
-    <aside className="w-full lg:w-[320px] lg:shrink-0 flex flex-col lg:sticky lg:top-16 lg:h-[calc(100vh-4rem)] card rounded-xl overflow-hidden">
+    <aside className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-surface-border shrink-0">
-        <span className="text-base">💬</span>
+        <span className="text-sm">💬</span>
         <h2 className="text-sm font-semibold">Pulse Community</h2>
-        <span className="ml-auto flex items-center gap-1 text-[10px] text-green-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-teal" />
-          LIVE
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {onlineCount > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-slate-500">
+              <Users className="w-3 h-3" />
+              {onlineCount}
+            </span>
+          )}
+          <span className="flex items-center gap-1 text-[10px] text-green-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-teal" />
+            LIVE
+          </span>
+        </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto py-2 space-y-0.5 min-h-[300px]">
         {messages.length === 0 && (
           <div className="px-4 py-8 text-center text-xs text-slate-600">
-            No messages yet — be the first to post!
+            No messages yet — be the first!
           </div>
         )}
         {messages.map((msg) => (
-          <MessageRow key={msg.id} msg={msg} />
+          <MessageRow
+            key={msg.id}
+            msg={msg}
+            canReact={canPost}
+            onReact={toggleReaction}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -171,7 +285,7 @@ export function CommunityFeed() {
                 className="underline hover:no-underline"
                 onClick={() => authClient.auth.resend({ type: 'signup', email: user.email! })}
               >
-                Resend email
+                Resend
               </button>
             </span>
           </div>
@@ -180,10 +294,7 @@ export function CommunityFeed() {
         {!user ? (
           <div className="text-center py-2">
             <p className="text-xs text-slate-500 mb-2">Sign up to join the conversation</p>
-            <Link
-              href="/auth/signup"
-              className="btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5"
-            >
+            <Link href="/auth/signup" className="btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5">
               Sign up free →
             </Link>
           </div>

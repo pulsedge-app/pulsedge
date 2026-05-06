@@ -37,16 +37,18 @@ const config: Config = {
         teal: '0 0 20px rgba(0, 212, 170, 0.15)',
         'teal-lg': '0 0 40px rgba(0, 212, 170, 0.2)',
         card: '0 4px 24px rgba(0, 0, 0, 0.4)',
+        hero: '0 8px 40px rgba(0, 0, 0, 0.5)',
       },
       animation: {
         'pulse-teal': 'pulse-teal 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'fade-in': 'fade-in 0.5s ease-out',
         'slide-up': 'slide-up 0.4s ease-out',
+        ticker: 'ticker 50s linear infinite',
       },
       keyframes: {
         'pulse-teal': {
           '0%, 100%': { opacity: '1' },
-          '50%': { opacity: '0.5' },
+          '50%': { opacity: '0.4' },
         },
         'fade-in': {
           from: { opacity: '0' },
@@ -55,6 +57,10 @@ const config: Config = {
         'slide-up': {
           from: { opacity: '0', transform: 'translateY(16px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        ticker: {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
         },
       },
     },

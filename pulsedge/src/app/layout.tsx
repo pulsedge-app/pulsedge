@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { ThemeProvider } from '@/providers/ThemeProvider';
+import { TickerBar } from '@/components/layout/TickerBar';
 import { Header } from '@/components/layout/Header';
 import { BottomNav } from '@/components/layout/BottomNav';
-import { ChatWidget } from '@/components/chat/ChatWidget';
 
 export const metadata: Metadata = {
   title: 'Pulsedge — Institutional Market Intelligence',
@@ -21,10 +21,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen flex flex-col">
         <ThemeProvider>
+          <TickerBar />
           <Header />
           <main className="flex-1">{children}</main>
           <BottomNav />
-          <ChatWidget />
         </ThemeProvider>
       </body>
     </html>

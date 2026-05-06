@@ -43,12 +43,26 @@ export interface MarketSymbol {
 export interface CalendarEvent {
   title: string;
   country: string;
+  currency: string;
+  datetime: string; // ISO 8601 for countdown
   date: string;
   time: string;
   impact: 'High' | 'Medium' | 'Low';
   forecast: string;
   previous: string;
   actual: string;
+}
+
+export interface NewsItem {
+  id: string;
+  headline: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  relevanceScore: number;
+  affectedPairs: string[];
+  impact: 'HIGH' | 'MEDIUM' | 'LOW';
+  aiContext: string;
 }
 
 export interface ChatMessage {
@@ -76,6 +90,8 @@ export interface CommunityMessage {
   message: string;
   is_bot: boolean;
   created_at: string;
+  reaction_count?: number;
+  user_reacted?: boolean;
 }
 
 export interface LivePriceData {

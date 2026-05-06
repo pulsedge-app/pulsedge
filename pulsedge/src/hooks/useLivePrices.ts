@@ -18,14 +18,11 @@ export function useLivePrices(markets: MarketSymbol[]): PriceMap {
       const res = await fetch(`/api/prices?symbols=${encodeURIComponent(tdSymbols)}`);
       if (!res.ok) return;
       const data: Record<string, { price: number; change_percent: number }> = await res.json();
-
       setPrices((prev) => {
         const next = { ...prev };
         markets.forEach((m) => {
           const d = data[m.tdSymbol];
-          if (d) {
-            next[m.symbol] = { price: d.price, change_percent: d.change_percent, loading: false };
-          }
+          if (d) next[m.symbol] = { price: d.price, change_percent: d.change_percent, loading: false };
         });
         return next;
       });
@@ -36,7 +33,7 @@ export function useLivePrices(markets: MarketSymbol[]): PriceMap {
 
   useEffect(() => {
     fetchPrices();
-    const id = setInterval(fetchPrices, 60_000);
+    const id = setInterval(fetchPrices, 30_000);
     return () => clearInterval(id);
   }, [fetchPrices]);
 

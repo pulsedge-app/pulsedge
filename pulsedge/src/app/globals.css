@@ -23,9 +23,7 @@
     --text-muted: 148 163 184;
   }
 
-  * {
-    border-color: rgb(var(--border));
-  }
+  * { border-color: rgb(var(--border)); }
 
   body {
     @apply antialiased;
@@ -33,20 +31,10 @@
     color: rgb(var(--text));
   }
 
-  /* Scrollbar styling */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    @apply bg-slate-600 rounded-full;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-500;
-  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-600; }
 }
 
 @layer components {
@@ -85,30 +73,36 @@
   }
 
   .badge-bullish {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold
            bg-green-500/15 text-green-400 border border-green-500/20;
   }
 
   .badge-bearish {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold
            bg-red-500/15 text-red-400 border border-red-500/20;
   }
 
   .badge-neutral {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold
            bg-amber-500/15 text-amber-400 border border-amber-500/20;
   }
 
   .section-header {
-    @apply text-xs font-semibold uppercase tracking-widest text-slate-500 mb-4;
+    @apply text-[10px] font-semibold uppercase tracking-widest text-slate-500;
   }
 
   .glow-line {
-    @apply h-px bg-gradient-to-r from-transparent via-teal/40 to-transparent;
+    @apply h-px bg-gradient-to-r from-transparent via-teal/30 to-transparent;
   }
+
+  /* Continuous ticker scroll — doubles items for seamless loop */
+  .ticker-track {
+    display: flex;
+    width: max-content;
+    animation: ticker 50s linear infinite;
+    will-change: transform;
+  }
+  .ticker-track:hover { animation-play-state: paused; }
 }
 
-/* TradingView widget overrides */
-.tradingview-widget-container iframe {
-  border-radius: 0 0 12px 12px;
-}
+.tradingview-widget-container iframe { border-radius: 0 0 12px 12px; }

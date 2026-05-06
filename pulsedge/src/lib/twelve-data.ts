@@ -62,6 +62,16 @@ export async function getTimeSeries(
   }
 }
 
+// Returns close prices oldest→newest for sparkline display
+export async function getSparklinePoints(
+  symbol: string,
+  interval = '1h',
+  bars = 8
+): Promise<number[]> {
+  const data = await getTimeSeries(symbol, interval, bars);
+  return data.map((b) => b.close).reverse();
+}
+
 export async function getMultipleQuotes(
   symbols: string[]
 ): Promise<Record<string, QuoteData | null>> {
