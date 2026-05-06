@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import type { CalendarEvent } from '@/types';
 
 const FF_RSS_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
@@ -36,8 +36,11 @@ function parseDate(dateStr: string): { datetime: string; date: string; time: str
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const hoursParam = req.nextUrl.searchParams.get('hours');
+    const hours = Math.min(48, Math.max(1, parseInt(hoursParam ?? '24', 10) || 24));
+
     const res = await fetch(FF_RSS_URL, {
       next: { revalidate: 3600 },
       headers: { 'User-Agent': 'Pulsedge/1.0' },
@@ -59,7 +62,7 @@ export async function GET() {
         return {
           title: parseXmlValue(item, 'title'),
           country,
-          currency: country, // FF uses country code as currency indicator
+          currency: country,
           datetime,
           date,
           time,
@@ -69,12 +72,11 @@ export async function GET() {
           actual: parseXmlValue(item, 'actual'),
         } satisfies CalendarEvent;
       })
-      .filter((e) => e.impact === 'High' && e.title && e.date)
-      // Return events from now onward, up to 24 hours
+      .filter((e) => e.title && e.date)
       .filter((e) => {
         const t = new Date(e.datetime).getTime();
         const diff = t - now.getTime();
-        return diff > -60_000 && diff < 24 * 60 * 60 * 1000;
+        return diff > -60_000 && diff < hours * 60 * 60 * 1000;
       })
       .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
 

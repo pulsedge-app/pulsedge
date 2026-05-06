@@ -1,16 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { HeroCard } from '@/components/market/HeroCard';
-import { PairTable } from '@/components/market/PairTable';
-import { TopStoryBox } from '@/components/news/TopStoryBox';
-import { NextEventBox } from '@/components/news/NextEventBox';
-import { MarketIntelFeed } from '@/components/news/MarketIntelFeed';
+import { TopSignalsTable } from '@/components/market/TopSignalsTable';
+import { AllMarketsTable } from '@/components/market/AllMarketsTable';
+import { EconomicCalendar } from '@/components/calendar/EconomicCalendar';
+import { IntelPanel } from '@/components/news/IntelPanel';
 import { CommunityFeed } from '@/components/community/CommunityFeed';
 import { useLivePrices } from '@/hooks/useLivePrices';
-import { MARKET_SYMBOLS, HERO_SYMBOLS } from '@/lib/markets';
-import type { DailyAnalysis, MarketSymbol, CalendarEvent, NewsItem } from '@/types';
+import type { DailyAnalysis, MarketSymbol } from '@/types';
 
 interface Props {
   markets: MarketSymbol[];
@@ -24,66 +21,17 @@ interface Props {
 export function DashboardClient({
   markets,
   analyses,
-  heroSparklines,
   isLoggedIn,
   isVerified,
   userEmail,
 }: Props) {
   const prices = useLivePrices(markets);
 
-  // News state — fetched here and shared with TopStory + Feed
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [newsLoading, setNewsLoading] = useState(true);
-  const [newsUpdated, setNewsUpdated] = useState<Date | null>(null);
-
-  // Calendar events
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-
-  const fetchNews = useCallback(async () => {
-    setNewsLoading(true);
-    try {
-      const res = await fetch('/api/news');
-      if (res.ok) {
-        const data: NewsItem[] = await res.json();
-        setNews(data);
-        setNewsUpdated(new Date());
-      }
-    } catch {
-      // keep previous
-    } finally {
-      setNewsLoading(false);
-    }
-  }, []);
-
-  // Initial fetches
-  useEffect(() => {
-    fetchNews();
-    const id = setInterval(fetchNews, 5 * 60_000);
-    return () => clearInterval(id);
-  }, [fetchNews]);
-
-  useEffect(() => {
-    fetch('/api/calendar')
-      .then((r) => r.json())
-      .then((data: CalendarEvent[]) => setCalendarEvents(data))
-      .catch(() => {});
-    const id = setInterval(() => {
-      fetch('/api/calendar')
-        .then((r) => r.json())
-        .then((data: CalendarEvent[]) => setCalendarEvents(data))
-        .catch(() => {});
-    }, 60 * 60_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const heroMarkets = HERO_SYMBOLS.map((s) => MARKET_SYMBOLS.find((m) => m.symbol === s)!).filter(Boolean);
-  const topStory = news.find((n) => n.relevanceScore >= 9) ?? news[0] ?? null;
-
   return (
-    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 pb-24 lg:pb-8 space-y-8">
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 pb-20 xl:pb-8">
       {/* Email verification banner */}
       {isLoggedIn && !isVerified && (
-        <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3">
+        <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 mb-5">
           <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div className="text-sm">
             <span className="font-semibold text-amber-300">Verify your email</span>
@@ -95,56 +43,62 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* ─── SECTION 1: HERO CARDS ─── */}
-      <section>
-        <div className="flex items-center gap-2 mb-5">
-          <span className="text-teal text-xs font-bold uppercase tracking-widest">Featured</span>
-          <div className="flex-1 glow-line" />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {heroMarkets.map((market) => (
-            <HeroCard
-              key={market.symbol}
-              market={market}
-              analysis={analyses[market.symbol] ?? null}
-              livePrice={prices[market.symbol] ?? { price: 0, change_percent: 0, loading: true }}
-              sparkline={heroSparklines[market.tdSymbol] ?? []}
-              isLoggedIn={isLoggedIn}
-            />
-          ))}
-        </div>
-      </section>
+      {/* ─── TWO-COLUMN LAYOUT ─── */}
+      <div className="grid grid-cols-1 xl:grid-cols-[62fr_38fr] gap-4">
 
-      {/* ─── SECTION 2: PAIR TABLE ─── */}
-      <section id="markets">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-teal text-xs font-bold uppercase tracking-widest">All Markets</span>
-          <div className="flex-1 glow-line" />
-        </div>
-        <PairTable analyses={analyses} prices={prices} isLoggedIn={isLoggedIn} />
-      </section>
-
-      {/* ─── SECTION 3: TWO COLUMN LAYOUT ─── */}
-      <div className="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-6" id="news">
-        {/* Left column — 60% */}
-        <div className="space-y-5">
-          <TopStoryBox story={topStory} />
-          <NextEventBox events={calendarEvents} />
-          <MarketIntelFeed
-            items={news}
-            loading={newsLoading}
-            onRefresh={fetchNews}
-            lastUpdated={newsUpdated}
+        {/* ── LEFT COLUMN (62%) ── */}
+        <div className="space-y-4 min-w-0">
+          {/* Today's Top Signals */}
+          <TopSignalsTable
+            analyses={analyses}
+            prices={prices}
+            markets={markets}
+            isLoggedIn={isLoggedIn}
+            isVerified={isVerified}
           />
+
+          {/* All Markets table */}
+          <AllMarketsTable
+            markets={markets}
+            analyses={analyses}
+            prices={prices}
+            isLoggedIn={isLoggedIn}
+          />
+
+          {/* Economic Calendar */}
+          <div id="calendar">
+            <EconomicCalendar />
+          </div>
+
+          {/* Mobile-only: Intel + Community rendered below calendar */}
+          <div className="xl:hidden space-y-4" id="community">
+            <IntelPanel />
+            <div className="card overflow-hidden" style={{ minHeight: '480px' }}>
+              <CommunityFeed />
+            </div>
+          </div>
         </div>
 
-        {/* Right column — 40% */}
+        {/* ── RIGHT COLUMN (38%) — sticky, two panels ── */}
         <div
-          id="community"
-          className="xl:sticky xl:top-[5.5rem] xl:self-start card overflow-hidden"
-          style={{ maxHeight: 'calc(100vh - 7rem)' }}
+          id="news"
+          className="hidden xl:flex flex-col gap-4 sticky top-[88px] self-start"
+          style={{ height: 'calc(100vh - 88px - 1.5rem)', minHeight: 0 }}
         >
-          <CommunityFeed />
+          {/* Intel Panel — upper ~47% */}
+          <div
+            className="card overflow-hidden flex flex-col shrink-0"
+            style={{ maxHeight: '47%', minHeight: 0 }}
+          >
+            <div className="overflow-y-auto flex-1 min-h-0">
+              <IntelPanel compact />
+            </div>
+          </div>
+
+          {/* Community Feed — fills remaining height */}
+          <div className="card overflow-hidden flex flex-col flex-1 min-h-0" id="community">
+            <CommunityFeed />
+          </div>
         </div>
       </div>
     </div>

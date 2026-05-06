@@ -89,6 +89,7 @@ export interface CommunityMessage {
   username: string;
   message: string;
   is_bot: boolean;
+  image_url?: string | null;
   created_at: string;
   reaction_count?: number;
   user_reacted?: boolean;

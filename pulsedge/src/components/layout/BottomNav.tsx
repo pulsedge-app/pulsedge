@@ -2,28 +2,33 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, LineChart, Calendar, MessageSquare } from 'lucide-react';
+import { Home, BarChart2, Calendar, MessageSquare, User } from 'lucide-react';
 
 const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/analysis', label: 'Analysis', icon: LineChart },
-  { href: '/calendar', label: 'Calendar', icon: Calendar },
-  { href: '/dashboard#community', label: 'Chat', icon: MessageSquare },
+  { href: '/dashboard', label: 'Home', icon: Home, exact: true },
+  { href: '/dashboard#markets', label: 'Markets', icon: BarChart2, exact: false },
+  { href: '/dashboard#calendar', label: 'Calendar', icon: Calendar, exact: false },
+  { href: '/dashboard#community', label: 'Community', icon: MessageSquare, exact: false },
+  { href: '/profile', label: 'Profile', icon: User, exact: true },
 ];
 
 export function BottomNav() {
   const pathname = usePathname();
+
   return (
-    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-surface-border bg-navy-900/95 backdrop-blur-md">
+    <nav className="xl:hidden fixed bottom-0 inset-x-0 z-40 border-t border-surface-border bg-[#060a14]/95 backdrop-blur-md safe-area-pb">
       <div className="flex">
-        {NAV.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== '/dashboard#community' && pathname.startsWith(href) && href !== '/dashboard') || pathname === href;
+        {NAV.map(({ href, label, icon: Icon, exact }) => {
+          const hrefBase = href.split('#')[0];
+          const active = exact
+            ? pathname === hrefBase
+            : pathname === hrefBase || pathname.startsWith(hrefBase + '/');
           return (
             <Link
               key={href}
               href={href}
-              className={`flex-1 flex flex-col items-center gap-1 py-3 text-[10px] font-medium transition-colors ${
-                active ? 'text-teal' : 'text-slate-500 hover:text-slate-300'
+              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 min-h-[44px] text-[9px] font-semibold uppercase tracking-wide transition-colors ${
+                active ? 'text-teal' : 'text-slate-600 hover:text-slate-400'
               }`}
             >
               <Icon className="w-5 h-5" />

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, TrendingUp, TrendingDown, Minus, Lock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { TradingViewWidget } from '@/components/market/TradingViewWidget';
+import { SymbolSidebar } from '@/components/symbol/SymbolSidebar';
 import { MARKET_SYMBOLS, formatPrice } from '@/lib/markets';
 import type { DailyAnalysis } from '@/types';
 
@@ -38,7 +39,7 @@ const BIAS_CFG = {
 
 const TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
 const TF_LABELS: Record<string, string> = {
-  '1': '1M', '5': '5M', '15': '15M', '60': '1H', '240': '4H', 'D': 'D', 'W': 'W',
+  '1': '1M', '5': '5M', '15': '15M', '60': '1H', '240': '4H', 'D': '1D', 'W': '1W',
 };
 
 export default async function SymbolPage({ params }: Props) {
@@ -56,7 +57,7 @@ export default async function SymbolPage({ params }: Props) {
   const BiasIcon = cfg.icon;
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 pb-20 xl:pb-8">
       {/* Breadcrumb */}
       <Link
         href="/dashboard"
@@ -67,7 +68,7 @@ export default async function SymbolPage({ params }: Props) {
       </Link>
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
+      <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-2xl font-bold tracking-tight">{market.symbol}</h1>
@@ -88,31 +89,34 @@ export default async function SymbolPage({ params }: Props) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-6">
-        {/* Chart */}
-        <div className="card overflow-hidden">
-          {/* Timeframe buttons */}
-          <div className="flex items-center gap-1 px-4 py-2.5 border-b border-surface-border">
-            {TIMEFRAMES.map((tf) => (
-              <span
-                key={tf}
-                className="px-2.5 py-1 rounded text-xs font-medium text-slate-500 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
-              >
-                {TF_LABELS[tf]}
-              </span>
-            ))}
-          </div>
-          <TradingViewWidget symbol={market.tvSymbol} height={480} />
-        </div>
+      {/* ─── MAIN GRID: chart+analysis left, sidebar right ─── */}
+      <div className="grid grid-cols-1 xl:grid-cols-[62fr_38fr] gap-5">
 
-        {/* Analysis panel */}
-        <div className="space-y-4">
+        {/* Left: chart + analysis panel */}
+        <div className="space-y-4 min-w-0">
+          {/* Chart card */}
+          <div className="card overflow-hidden">
+            {/* Timeframe buttons */}
+            <div className="flex items-center gap-0.5 px-4 py-2.5 border-b border-surface-border">
+              {TIMEFRAMES.map((tf) => (
+                <span
+                  key={tf}
+                  className="px-2.5 py-1.5 rounded text-xs font-semibold text-slate-500 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+                >
+                  {TF_LABELS[tf]}
+                </span>
+              ))}
+            </div>
+            <TradingViewWidget symbol={market.tvSymbol} height={600} />
+          </div>
+
+          {/* Analysis panel */}
           {analysis ? (
             <>
               {/* Reasoning */}
               <div className="card p-4">
                 <div className={`h-0.5 ${cfg.bar} opacity-60 -mx-4 -mt-4 mb-4 rounded-t-xl`} />
-                <p className="section-header mb-3">Analysis</p>
+                <p className="section-header mb-3">Market Analysis</p>
                 <p className="text-sm text-slate-300 leading-relaxed">{analysis.reasoning}</p>
               </div>
 
@@ -226,6 +230,11 @@ export default async function SymbolPage({ params }: Props) {
               <span className="text-xs text-slate-700">Check back after 06:00 UTC.</span>
             </div>
           )}
+        </div>
+
+        {/* Right: related news + community sidebar */}
+        <div>
+          <SymbolSidebar symbol={symbolUpper} />
         </div>
       </div>
     </div>

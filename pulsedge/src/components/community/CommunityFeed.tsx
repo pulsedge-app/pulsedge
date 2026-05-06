@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Send, Bot, AlertCircle, CheckCircle, Heart, Users } from 'lucide-react';
+import Image from 'next/image';
+import { Send, Bot, AlertCircle, CheckCircle, Heart, Users, Paperclip, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { CommunityMessage } from '@/types';
 import type { User } from '@supabase/supabase-js';
@@ -31,7 +32,6 @@ async function fetchMessages(
 
   const messages = data as CommunityMessage[];
 
-  // Fetch reaction counts
   const { data: reactions } = await client
     .from('community_reactions')
     .select('message_id, user_id')
@@ -75,10 +75,12 @@ function MessageRow({
   msg,
   canReact,
   onReact,
+  onImageClick,
 }: {
   msg: CommunityMessage;
   canReact: boolean;
   onReact: (id: string) => void;
+  onImageClick: (url: string) => void;
 }) {
   return (
     <div className="flex gap-2.5 py-2 px-3 hover:bg-white/[0.02] rounded-lg transition-colors group">
@@ -91,7 +93,27 @@ function MessageRow({
           {msg.is_bot && <Bot className="w-2.5 h-2.5 text-teal" />}
           <span className="text-[10px] text-slate-700">{timeAgo(msg.created_at)}</span>
         </div>
-        <p className="text-xs text-slate-400 leading-relaxed mt-0.5 break-words">{msg.message}</p>
+
+        {msg.message && (
+          <p className="text-xs text-slate-400 leading-relaxed mt-0.5 break-words">{msg.message}</p>
+        )}
+
+        {/* Image attachment */}
+        {msg.image_url && (
+          <button
+            onClick={() => onImageClick(msg.image_url!)}
+            className="mt-1.5 block rounded-lg overflow-hidden border border-white/10 hover:border-white/20 transition-colors"
+          >
+            <Image
+              src={msg.image_url}
+              alt="Attachment"
+              width={200}
+              height={120}
+              className="object-cover max-h-[120px] w-auto"
+              unoptimized
+            />
+          </button>
+        )}
 
         {/* Reaction */}
         <div className="flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -107,9 +129,7 @@ function MessageRow({
             }`}
           >
             <Heart className="w-3 h-3" fill={msg.user_reacted ? 'currentColor' : 'none'} />
-            {(msg.reaction_count ?? 0) > 0 && (
-              <span>{msg.reaction_count}</span>
-            )}
+            {(msg.reaction_count ?? 0) > 0 && <span>{msg.reaction_count}</span>}
           </button>
         </div>
       </div>
@@ -124,7 +144,12 @@ export function CommunityFeed() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [onlineCount, setOnlineCount] = useState(0);
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const authClient = useRef(createClient()).current;
   const isVerified = user?.email_confirmed_at != null;
   const canPost = !!user && isVerified;
@@ -143,7 +168,17 @@ export function CommunityFeed() {
     const supabase = createClient();
     const userId = user?.id ?? null;
 
-    fetchMessages(supabase, userId, setMessages, bottomRef);
+    fetchMessages(supabase, userId, setMessages, bottomRef).then(() => {
+      // Trigger seed if no messages after initial fetch
+      setMessages((prev) => {
+        if (prev.length === 0) {
+          fetch('/api/community/seed', { method: 'POST' })
+            .then(() => fetchMessages(supabase, userId, setMessages, bottomRef))
+            .catch(() => {});
+        }
+        return prev;
+      });
+    });
 
     const channel = supabase
       .channel('community_feed')
@@ -161,7 +196,7 @@ export function CommunityFeed() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Presence — isolated client
   useEffect(() => {
@@ -190,155 +225,258 @@ export function CommunityFeed() {
     setMessages((prev) =>
       prev.map((m) =>
         m.id === messageId
-          ? {
-              ...m,
-              user_reacted: !m.user_reacted,
-              reaction_count: (m.reaction_count ?? 0) + (m.user_reacted ? -1 : 1),
-            }
+          ? { ...m, user_reacted: !m.user_reacted, reaction_count: (m.reaction_count ?? 0) + (m.user_reacted ? -1 : 1) }
           : m
       )
     );
-
     if (!user) return;
     const msg = messages.find((m) => m.id === messageId);
     if (msg?.user_reacted) {
-      await authClient
-        .from('community_reactions')
-        .delete()
-        .eq('message_id', messageId)
-        .eq('user_id', user.id);
+      await authClient.from('community_reactions').delete().eq('message_id', messageId).eq('user_id', user.id);
     } else {
-      await authClient
-        .from('community_reactions')
-        .insert({ message_id: messageId, user_id: user.id });
+      await authClient.from('community_reactions').insert({ message_id: messageId, user_id: user.id });
     }
   }, [authClient, canPost, messages, user]);
 
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setError('Image must be under 5MB'); return; }
+    if (!file.type.startsWith('image/')) { setError('Only image files allowed'); return; }
+    setPendingImage(file);
+    setImagePreview(URL.createObjectURL(file));
+    setError('');
+  }, []);
+
+  const clearImage = useCallback(() => {
+    setPendingImage(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [imagePreview]);
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
-    if (!text || !canPost || sending) return;
+    if ((!text && !pendingImage) || !canPost || sending) return;
     if (text.length > 280) { setError('Max 280 characters'); return; }
+
     setSending(true);
     setError('');
+
+    let imageUrl: string | null = null;
+
+    if (pendingImage && user) {
+      setUploadingImage(true);
+      const ext = pendingImage.name.split('.').pop() ?? 'jpg';
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error: uploadErr } = await authClient.storage
+        .from('community-images')
+        .upload(path, pendingImage, { contentType: pendingImage.type });
+
+      if (uploadErr) {
+        setError('Image upload failed. Try again.');
+        setSending(false);
+        setUploadingImage(false);
+        return;
+      }
+
+      const { data: urlData } = authClient.storage.from('community-images').getPublicUrl(path);
+      imageUrl = urlData.publicUrl;
+      setUploadingImage(false);
+    }
+
     const username = user!.email?.split('@')[0] ?? 'anon';
     const { error: err } = await authClient.from('community_messages').insert({
       user_id: user!.id,
       username,
       message: text,
       is_bot: false,
+      ...(imageUrl ? { image_url: imageUrl } : {}),
     });
+
     setSending(false);
-    if (err) setError('Failed to send. Try again.');
-    else setInput('');
-  }, [input, canPost, sending, user, authClient]);
+    if (err) {
+      setError('Failed to send. Try again.');
+    } else {
+      setInput('');
+      clearImage();
+    }
+  }, [input, pendingImage, canPost, sending, user, authClient, clearImage]);
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
   return (
-    <aside className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-surface-border shrink-0">
-        <span className="text-sm">💬</span>
-        <h2 className="text-sm font-semibold">Pulse Community</h2>
-        <div className="ml-auto flex items-center gap-2">
-          {onlineCount > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-slate-500">
-              <Users className="w-3 h-3" />
-              {onlineCount}
+    <>
+      <aside className="flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-surface-border shrink-0">
+          <span className="text-sm">💬</span>
+          <h2 className="text-sm font-semibold">Pulse Community</h2>
+          <div className="ml-auto flex items-center gap-2">
+            {onlineCount > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                <Users className="w-3 h-3" />
+                {onlineCount}
+              </span>
+            )}
+            <span className="flex items-center gap-1 text-[10px] text-green-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+              LIVE
             </span>
-          )}
-          <span className="flex items-center gap-1 text-[10px] text-green-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-teal" />
-            LIVE
-          </span>
+          </div>
         </div>
-      </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto py-2 space-y-0.5 min-h-[300px]">
-        {messages.length === 0 && (
-          <div className="px-4 py-8 text-center text-xs text-slate-600">
-            No messages yet — be the first!
-          </div>
-        )}
-        {messages.map((msg) => (
-          <MessageRow
-            key={msg.id}
-            msg={msg}
-            canReact={canPost}
-            onReact={toggleReaction}
-          />
-        ))}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <div className="shrink-0 border-t border-surface-border p-3 space-y-2">
-        {user && !isVerified && (
-          <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-400">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>
-              Verify your email to post.{' '}
-              <button
-                className="underline hover:no-underline"
-                onClick={() => authClient.auth.resend({ type: 'signup', email: user.email! })}
-              >
-                Resend
-              </button>
-            </span>
-          </div>
-        )}
-
-        {!user ? (
-          <div className="text-center py-2">
-            <p className="text-xs text-slate-500 mb-2">Sign up to join the conversation</p>
-            <Link href="/auth/signup" className="btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5">
-              Sign up free →
-            </Link>
-          </div>
-        ) : (
-          <>
-            {error && (
-              <p className="text-[11px] text-red-400 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" /> {error}
-              </p>
-            )}
-            <div className="flex gap-2">
-              <textarea
-                value={input}
-                onChange={(e) => { setInput(e.target.value); setError(''); }}
-                onKeyDown={handleKey}
-                placeholder={canPost ? 'Share your thoughts… (Enter to send)' : 'Verify email to post'}
-                disabled={!canPost}
-                rows={1}
-                maxLength={280}
-                className="input text-xs py-2 resize-none flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ minHeight: '36px', maxHeight: '80px' }}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={!canPost || !input.trim() || sending}
-                className="btn-primary px-3 py-2 shrink-0 disabled:opacity-40"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto py-2 space-y-0.5 min-h-[200px]">
+          {messages.length === 0 && (
+            <div className="px-4 py-8 text-center text-xs text-slate-600">
+              Loading…
             </div>
-            {input.length > 240 && (
-              <p className={`text-[10px] text-right ${input.length > 280 ? 'text-red-400' : 'text-slate-500'}`}>
-                {input.length}/280
-              </p>
-            )}
-            {isVerified && (
-              <p className="text-[10px] text-slate-600 flex items-center gap-1">
-                <CheckCircle className="w-2.5 h-2.5 text-green-500" />
-                Verified · posting as {user.email?.split('@')[0]}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </aside>
+          )}
+          {messages.map((msg) => (
+            <MessageRow
+              key={msg.id}
+              msg={msg}
+              canReact={canPost}
+              onReact={toggleReaction}
+              onImageClick={setLightboxUrl}
+            />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div className="shrink-0 border-t border-surface-border p-3 space-y-2">
+          {user && !isVerified && (
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>
+                Verify your email to post.{' '}
+                <button
+                  className="underline hover:no-underline"
+                  onClick={() => authClient.auth.resend({ type: 'signup', email: user.email! })}
+                >
+                  Resend
+                </button>
+              </span>
+            </div>
+          )}
+
+          {!user ? (
+            <div className="text-center py-2">
+              <p className="text-xs text-slate-500 mb-2">Sign up to join the conversation</p>
+              <Link href="/auth/signup" className="btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5">
+                Sign up free →
+              </Link>
+            </div>
+          ) : (
+            <>
+              {error && (
+                <p className="text-[11px] text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> {error}
+                </p>
+              )}
+
+              {/* Image preview */}
+              {imagePreview && (
+                <div className="relative inline-block">
+                  <Image
+                    src={imagePreview}
+                    alt="Preview"
+                    width={80}
+                    height={60}
+                    className="rounded-lg border border-white/10 object-cover"
+                    unoptimized
+                  />
+                  <button
+                    onClick={clearImage}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-slate-700 rounded-full flex items-center justify-center text-slate-300 hover:text-white"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                {/* Attach button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!canPost || uploadingImage}
+                  className="text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-40 shrink-0 self-center"
+                  title="Attach image (max 5MB)"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+
+                <textarea
+                  value={input}
+                  onChange={(e) => { setInput(e.target.value); setError(''); }}
+                  onKeyDown={handleKey}
+                  placeholder={canPost ? 'Share your thoughts… (Enter to send)' : 'Verify email to post'}
+                  disabled={!canPost}
+                  rows={1}
+                  maxLength={280}
+                  className="input text-xs py-2 resize-none flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ minHeight: '36px', maxHeight: '80px' }}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={!canPost || (!input.trim() && !pendingImage) || sending || uploadingImage}
+                  className="btn-primary px-3 py-2 shrink-0 disabled:opacity-40"
+                >
+                  <Send className={`w-3.5 h-3.5 ${(sending || uploadingImage) ? 'animate-pulse' : ''}`} />
+                </button>
+              </div>
+
+              {input.length > 240 && (
+                <p className={`text-[10px] text-right ${input.length > 280 ? 'text-red-400' : 'text-slate-500'}`}>
+                  {input.length}/280
+                </p>
+              )}
+              {isVerified && (
+                <p className="text-[10px] text-slate-600 flex items-center gap-1">
+                  <CheckCircle className="w-2.5 h-2.5 text-green-500" />
+                  Verified · posting as {user.email?.split('@')[0]}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </aside>
+
+      {/* Lightbox modal */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-3xl max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={lightboxUrl}
+              alt="Full size"
+              width={900}
+              height={600}
+              className="object-contain rounded-xl max-h-[80vh] w-auto"
+              unoptimized
+            />
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute top-3 right-3 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center text-white hover:bg-black/80"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

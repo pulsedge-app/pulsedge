@@ -7,7 +7,7 @@ export function SessionPills() {
   const [sessions, setSessions] = useState(() => getSessionStatuses());
 
   useEffect(() => {
-    const id = setInterval(() => setSessions(getSessionStatuses()), 60_000);
+    const id = setInterval(() => setSessions(getSessionStatuses()), 30_000);
     return () => clearInterval(id);
   }, []);
 
@@ -18,26 +18,26 @@ export function SessionPills() {
           key={s.name}
           title={
             s.isLive
-              ? `${s.name} session — closes in ${formatMinutes(s.minutesUntilClose!)}`
-              : `${s.name} session — opens in ${formatMinutes(s.minutesUntilOpen!)}`
+              ? `${s.name} — closes in ${formatMinutes(s.minutesUntilClose!)}`
+              : `${s.name} — opens in ${formatMinutes(s.minutesUntilOpen!)}`
           }
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium border transition-all ${
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all select-none ${
             s.isLive
-              ? 'bg-green-500/10 border-green-500/25 text-green-400'
-              : 'bg-white/[0.03] border-white/[0.08] text-slate-600'
+              ? 'bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.35)]'
+              : 'bg-slate-800/80 text-slate-600 border border-white/[0.06]'
           }`}
         >
           <span>{s.flag}</span>
-          <span className="hidden lg:inline font-semibold">{s.name}</span>
+          <span className="hidden lg:inline">{s.name}</span>
           {s.isLive ? (
             <>
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-teal shrink-0" />
-              <span className="text-green-500/70 hidden xl:inline">
-                {formatMinutes(s.minutesUntilClose!)}
+              <span className="w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse shrink-0" />
+              <span className="hidden xl:inline opacity-90">
+                {formatMinutes(s.minutesUntilClose!)} left
               </span>
             </>
           ) : (
-            <span className="text-slate-700 hidden xl:inline">
+            <span className="hidden xl:inline text-slate-700">
               {formatMinutes(s.minutesUntilOpen!)}
             </span>
           )}
