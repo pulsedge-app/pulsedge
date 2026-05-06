@@ -34,32 +34,43 @@ const SEED_MESSAGES = [
   },
 ];
 
+async function runSeed() {
+  const supabase = createClient();
+
+  const { count } = await supabase
+    .from('community_messages')
+    .select('*', { count: 'exact', head: true });
+
+  if ((count ?? 0) > 0) {
+    return NextResponse.json({ seeded: false, reason: 'already has messages' });
+  }
+
+  const now = Date.now();
+  const rows = SEED_MESSAGES.map((m) => ({
+    user_id: null,
+    username: m.username,
+    message: m.message,
+    is_bot: m.is_bot,
+    created_at: new Date(now - m.offset_minutes * 60_000).toISOString(),
+  }));
+
+  const { error } = await supabase.from('community_messages').insert(rows);
+  if (error) return NextResponse.json({ seeded: false, error: error.message }, { status: 500 });
+
+  return NextResponse.json({ seeded: true, count: rows.length });
+}
+
+export async function GET() {
+  try {
+    return await runSeed();
+  } catch (err) {
+    return NextResponse.json({ seeded: false, error: String(err) }, { status: 500 });
+  }
+}
+
 export async function POST() {
   try {
-    const supabase = createClient();
-
-    // Self-protecting: only seed if table is empty
-    const { count } = await supabase
-      .from('community_messages')
-      .select('*', { count: 'exact', head: true });
-
-    if ((count ?? 0) > 0) {
-      return NextResponse.json({ seeded: false, reason: 'already has messages' });
-    }
-
-    const now = Date.now();
-    const rows = SEED_MESSAGES.map((m) => ({
-      user_id: null,
-      username: m.username,
-      message: m.message,
-      is_bot: m.is_bot,
-      created_at: new Date(now - m.offset_minutes * 60_000).toISOString(),
-    }));
-
-    const { error } = await supabase.from('community_messages').insert(rows);
-    if (error) return NextResponse.json({ seeded: false, error: error.message }, { status: 500 });
-
-    return NextResponse.json({ seeded: true, count: rows.length });
+    return await runSeed();
   } catch (err) {
     return NextResponse.json({ seeded: false, error: String(err) }, { status: 500 });
   }
