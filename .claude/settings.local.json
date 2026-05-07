@@ -11,7 +11,17 @@
       "Bash(git rm *)",
       "Bash(git commit -m ' *)",
       "Bash(git config *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git commit -m 'feat: accept GET on /api/community/seed for browser triggering *)",
+      "PowerShell($response = Invoke-WebRequest -Uri \"https://pulsedge.io/api/analysis/generate\" -Method POST -Headers @{ \"Authorization\" = \"Bearer pulsedge-cron-2026-rambo\"; \"Content-Type\" = \"application/json\" } -UseBasicParsing; $response.StatusCode; $response.Content)",
+      "Bash(dir /S /B \"C:\\\\Users\\\\SA\\\\Documents\\\\TVBridge\\\\.claude\\\\worktrees\\\\unruffled-merkle-11ddeb\\\\pulsedge\\\\src\\\\app\\\\api\")",
+      "Bash(git commit --allow-empty -m 'chore: redeploy to pick up TWELVE_DATA_API_KEY env var *)",
+      "Bash(git commit -m 'perf: reduce Twelve Data API credit usage on free tier *)",
+      "Bash(dir /S /B \"C:\\\\Users\\\\SA\\\\Documents\\\\TVBridge\\\\.claude\\\\worktrees\\\\unruffled-merkle-11ddeb\\\\pulsedge\\\\src\\\\app\")",
+      "Bash(findstr \"page.tsx\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\SA\\\\Documents\\\\TVBridge\\\\.claude\\\\worktrees\\\\unruffled-merkle-11ddeb\\\\pulsedge\\\\src\\\\app\" -Recurse -Filter \"page.tsx\")",
+      "Bash(Select-Object FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\SA\\\\Documents\\\\TVBridge\\\\.claude\\\\worktrees\\\\unruffled-merkle-11ddeb\\\\pulsedge\\\\src\\\\app\" -Recurse | Where-Object { $_.Name -eq \"page.tsx\" } | ForEach-Object { $_.FullName })"
     ]
   }
 }

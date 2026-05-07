@@ -12,7 +12,7 @@ const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/analysis', label: 'Analysis' },
   { href: '/calendar', label: 'Calendar' },
-  { href: '/dashboard#news', label: 'News' },
+  { href: '/news', label: 'News' },
   { href: '/dashboard#community', label: 'Community' },
 ];
 

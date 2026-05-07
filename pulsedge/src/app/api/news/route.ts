@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import type { NewsItem } from '@/types';
 
@@ -96,9 +96,18 @@ Respond with a JSON array ONLY, no other text. Include only items with relevance
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Optional pair filter — e.g. ?pair=XAUUSD
+  const pairFilter = req.nextUrl.searchParams.get('pair')?.toUpperCase() ?? null;
+
   if (cache && Date.now() - cache.ts < CACHE_MS) {
-    return NextResponse.json(cache.items);
+    const items = pairFilter
+      ? cache.items.filter((item) =>
+          item.affectedPairs.some((p) => p.toUpperCase().includes(pairFilter)) ||
+          item.headline.toUpperCase().includes(pairFilter)
+        )
+      : cache.items;
+    return NextResponse.json(items);
   }
 
   const [reuters, cnbc] = await Promise.all([
@@ -124,5 +133,13 @@ export async function GET() {
 
   const items = await processWithClaude(combined);
   cache = { items, ts: Date.now() };
-  return NextResponse.json(items);
+
+  const result = pairFilter
+    ? items.filter((item) =>
+        item.affectedPairs.some((p) => p.toUpperCase().includes(pairFilter)) ||
+        item.headline.toUpperCase().includes(pairFilter)
+      )
+    : items;
+
+  return NextResponse.json(result);
 }

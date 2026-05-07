@@ -6,6 +6,9 @@ import { AllMarketsTable } from '@/components/market/AllMarketsTable';
 import { EconomicCalendar } from '@/components/calendar/EconomicCalendar';
 import { IntelPanel } from '@/components/news/IntelPanel';
 import { CommunityFeed } from '@/components/community/CommunityFeed';
+import { NextEventBox } from '@/components/dashboard/NextEventBox';
+import { TopOpportunities } from '@/components/dashboard/TopOpportunities';
+import { BottomNewsStrip } from '@/components/dashboard/BottomNewsStrip';
 import { useLivePrices } from '@/hooks/useLivePrices';
 import type { DailyAnalysis, MarketSymbol } from '@/types';
 
@@ -65,13 +68,25 @@ export function DashboardClient({
             isLoggedIn={isLoggedIn}
           />
 
+          {/* Top Opportunities */}
+          <TopOpportunities
+            markets={markets}
+            analyses={analyses}
+            prices={prices}
+            isLoggedIn={isLoggedIn}
+          />
+
           {/* Economic Calendar */}
           <div id="calendar">
             <EconomicCalendar />
           </div>
 
-          {/* Mobile-only: Intel + Community rendered below calendar */}
+          {/* Bottom News Strip */}
+          <BottomNewsStrip />
+
+          {/* Mobile-only: right column panels rendered below */}
           <div className="xl:hidden space-y-4" id="community">
+            <NextEventBox />
             <IntelPanel />
             <div className="card overflow-hidden" style={{ minHeight: '480px' }}>
               <CommunityFeed />
@@ -79,16 +94,21 @@ export function DashboardClient({
           </div>
         </div>
 
-        {/* ── RIGHT COLUMN (38%) — sticky, two panels ── */}
+        {/* ── RIGHT COLUMN (38%) — sticky, three panels ── */}
         <div
           id="news"
-          className="hidden xl:flex flex-col gap-4 sticky top-[88px] self-start"
+          className="hidden xl:flex flex-col gap-3 sticky top-[88px] self-start"
           style={{ height: 'calc(100vh - 88px - 1.5rem)', minHeight: 0 }}
         >
-          {/* Intel Panel — upper ~47% */}
+          {/* Next High-Impact Event */}
+          <div className="shrink-0">
+            <NextEventBox />
+          </div>
+
+          {/* Intel Panel — upper ~40% */}
           <div
             className="card overflow-hidden flex flex-col shrink-0"
-            style={{ maxHeight: '47%', minHeight: 0 }}
+            style={{ maxHeight: '40%', minHeight: 0 }}
           >
             <div className="overflow-y-auto flex-1 min-h-0">
               <IntelPanel compact />

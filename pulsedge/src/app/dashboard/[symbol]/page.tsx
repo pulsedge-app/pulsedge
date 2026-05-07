@@ -32,10 +32,17 @@ async function getUser() {
 }
 
 const BIAS_CFG = {
-  Bullish: { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/15 border-green-500/25', bar: 'bg-green-500' },
-  Bearish: { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/15 border-red-500/25', bar: 'bg-red-500' },
-  Neutral: { icon: Minus, color: 'text-amber-400', bg: 'bg-amber-500/15 border-amber-500/25', bar: 'bg-amber-500' },
+  Bullish: { icon: TrendingUp, color: 'text-green-400', bg: 'bg-green-500/15 border-green-500/25', bar: 'bg-green-500', barLight: 'bg-green-500/20' },
+  Bearish: { icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/15 border-red-500/25', bar: 'bg-red-500', barLight: 'bg-red-500/20' },
+  Neutral: { icon: Minus, color: 'text-amber-400', bg: 'bg-amber-500/15 border-amber-500/25', bar: 'bg-amber-500', barLight: 'bg-amber-500/20' },
 };
+
+function getConfidence(analysis: DailyAnalysis): number {
+  const base = analysis.bias === 'Neutral' ? 55 : 72;
+  const bonus = Math.min(analysis.entry_zones.length * 5, 15);
+  const levelBonus = Math.min(analysis.key_levels.length * 3, 12);
+  return Math.min(base + bonus + levelBonus, 96);
+}
 
 const TIMEFRAMES = ['1', '5', '15', '60', '240', 'D', 'W'];
 const TF_LABELS: Record<string, string> = {
@@ -55,42 +62,62 @@ export default async function SymbolPage({ params }: Props) {
   const bias = analysis?.bias ?? 'Neutral';
   const cfg = BIAS_CFG[bias];
   const BiasIcon = cfg.icon;
+  const confidence = analysis ? getConfidence(analysis) : 0;
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 pb-20 xl:pb-8">
-      {/* Breadcrumb */}
-      <Link
-        href="/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white mb-5 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to dashboard
-      </Link>
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 pb-20 xl:pb-6">
+      {/* ── Compact header bar ── */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-1 text-sm text-slate-500 hover:text-white transition-colors shrink-0"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </Link>
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl font-bold tracking-tight">{market.symbol}</h1>
-            {analysis && (
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${cfg.bg} ${cfg.color}`}>
-                <BiasIcon className="w-3.5 h-3.5" />
-                {bias}
-              </span>
-            )}
-          </div>
-          <p className="text-slate-500 text-sm">{market.label}</p>
+        {/* Pair + label */}
+        <div className="flex items-center gap-2 shrink-0">
+          <h1 className="text-lg font-bold tracking-tight">{market.symbol}</h1>
+          <span className="text-xs text-slate-600 hidden sm:inline">{market.label}</span>
         </div>
+
+        {/* Bias pill */}
+        {analysis && (
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${cfg.bg} ${cfg.color} shrink-0`}>
+            <BiasIcon className="w-3.5 h-3.5" />
+            {bias}
+          </span>
+        )}
+
+        {/* Reasoning snippet */}
+        {analysis?.reasoning && (
+          <p className="hidden lg:block text-[11px] text-slate-500 leading-snug flex-1 line-clamp-1">
+            {analysis.reasoning}
+          </p>
+        )}
+
+        {/* Confidence bar */}
+        {analysis && (
+          <div className="hidden md:flex items-center gap-2 shrink-0 ml-auto">
+            <span className="text-[10px] text-slate-600">Confidence</span>
+            <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className={`h-full ${cfg.bar} rounded-full opacity-80`} style={{ width: `${confidence}%` }} />
+            </div>
+            <span className="text-[10px] font-mono text-slate-400">{confidence}%</span>
+          </div>
+        )}
+
+        {/* Analysis price */}
         {analysis?.price_at_analysis && (
-          <div className="text-right">
-            <p className="text-[11px] text-slate-600 mb-0.5">Analysis price</p>
-            <p className="text-lg font-bold font-mono">{formatPrice(analysis.price_at_analysis, market.symbol)}</p>
+          <div className="shrink-0 text-right">
+            <p className="text-[10px] text-slate-600">Analysis price</p>
+            <p className="text-sm font-bold font-mono">{formatPrice(analysis.price_at_analysis, market.symbol)}</p>
           </div>
         )}
       </div>
 
       {/* ─── MAIN GRID: chart+analysis left, sidebar right ─── */}
-      <div className="grid grid-cols-1 xl:grid-cols-[62fr_38fr] gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[62fr_38fr] gap-4">
 
         {/* Left: chart + analysis panel */}
         <div className="space-y-4 min-w-0">
@@ -110,6 +137,28 @@ export default async function SymbolPage({ params }: Props) {
             <TradingViewWidget symbol={market.tvSymbol} height={600} />
           </div>
 
+          {/* Quick stats below chart */}
+          {analysis && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="card px-4 py-3 text-center">
+                <p className="text-[10px] text-slate-600 mb-1">Bias</p>
+                <p className={`text-sm font-bold ${cfg.color}`}>{bias}</p>
+              </div>
+              <div className="card px-4 py-3 text-center">
+                <p className="text-[10px] text-slate-600 mb-1">Key Levels</p>
+                <p className="text-sm font-bold text-slate-200">{analysis.key_levels.length}</p>
+              </div>
+              <div className="card px-4 py-3 text-center">
+                <p className="text-[10px] text-slate-600 mb-1">Entry Zones</p>
+                <p className="text-sm font-bold text-slate-200">{analysis.entry_zones.length}</p>
+              </div>
+              <div className="card px-4 py-3 text-center">
+                <p className="text-[10px] text-slate-600 mb-1">Confidence</p>
+                <p className={`text-sm font-bold ${cfg.color}`}>{confidence}%</p>
+              </div>
+            </div>
+          )}
+
           {/* Analysis panel */}
           {analysis ? (
             <>
@@ -128,15 +177,10 @@ export default async function SymbolPage({ params }: Props) {
                     {analysis.key_levels.map((level, i) => (
                       <div key={i} className="flex items-center justify-between py-1 border-b border-surface-border/50 last:border-0">
                         <span className="text-xs text-slate-400">{level.label}</span>
-                        <span
-                          className={`text-xs font-mono font-semibold ${
-                            level.type === 'support'
-                              ? 'text-green-400'
-                              : level.type === 'resistance'
-                              ? 'text-red-400'
-                              : 'text-amber-400'
-                          }`}
-                        >
+                        <span className={`text-xs font-mono font-semibold ${
+                          level.type === 'support' ? 'text-green-400' :
+                          level.type === 'resistance' ? 'text-red-400' : 'text-amber-400'
+                        }`}>
                           {formatPrice(level.price, market.symbol)}
                         </span>
                       </div>
@@ -151,13 +195,23 @@ export default async function SymbolPage({ params }: Props) {
                 {canSeeEntries ? (
                   <div className="space-y-3">
                     {analysis.entry_zones.map((zone, i) => (
-                      <div key={i} className="bg-white/[0.04] rounded-xl p-3 space-y-2">
+                      <div
+                        key={i}
+                        className={`bg-white/[0.04] rounded-xl p-3 space-y-2 relative overflow-hidden ${
+                          i >= 2 ? 'select-none' : ''
+                        }`}
+                      >
+                        {/* Blur overlay for entries 2+ */}
+                        {i >= 2 && (
+                          <div className="absolute inset-0 backdrop-blur-sm bg-navy-900/60 flex items-center justify-center z-10 rounded-xl">
+                            <Link href="/auth/signup" className="flex items-center gap-1.5 px-3 py-1.5 bg-teal/15 border border-teal/25 rounded-lg text-teal text-xs font-bold hover:bg-teal/25 transition-colors">
+                              <Lock className="w-3 h-3" />
+                              Unlock premium entry
+                            </Link>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
-                          <span
-                            className={`text-xs font-bold flex items-center gap-1 ${
-                              zone.direction === 'long' ? 'text-green-400' : 'text-red-400'
-                            }`}
-                          >
+                          <span className={`text-xs font-bold flex items-center gap-1 ${zone.direction === 'long' ? 'text-green-400' : 'text-red-400'}`}>
                             {zone.direction === 'long' ? (
                               <TrendingUp className="w-3.5 h-3.5" />
                             ) : (

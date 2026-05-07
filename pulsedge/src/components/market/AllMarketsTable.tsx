@@ -2,33 +2,34 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Star, TrendingUp, TrendingDown, Minus, ArrowRight } from 'lucide-react';
+import { Star, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { formatPrice } from '@/lib/markets';
 import type { DailyAnalysis, MarketSymbol, LivePriceData } from '@/types';
 
 const FLAGS: Record<string, string> = {
-  XAUUSD: '🥇',
-  EURUSD: '🇪🇺',
-  GBPUSD: '🇬🇧',
-  USDJPY: '🇯🇵',
-  BTCUSD: '₿',
-  ETHUSDT: '🔷',
-  SOLUSDT: '◎',
-  SPX: '🇺🇸',
-  AAPL: '🍎',
-  TSLA: '⚡',
-  NVDA: '🟢',
+  XAUUSD: '🥇', EURUSD: '🇪🇺', GBPUSD: '🇬🇧', USDJPY: '🇯🇵',
+  BTCUSD: '₿', ETHUSDT: '🔷', SOLUSDT: '◎',
+  SPX: '🇺🇸', AAPL: '🍎', TSLA: '⚡', NVDA: '🟢',
 };
 
-const BIAS_DOT: Record<string, string> = {
-  Bullish: 'bg-green-400',
-  Bearish: 'bg-red-400',
-  Neutral: 'bg-amber-400',
+const BIAS_ICON = { Bullish: TrendingUp, Bearish: TrendingDown, Neutral: Minus };
+const BIAS_COLOR: Record<string, string> = {
+  Bullish: 'text-green-400',
+  Bearish: 'text-red-400',
+  Neutral: 'text-amber-400',
 };
-const BIAS_ICON = {
-  Bullish: TrendingUp,
-  Bearish: TrendingDown,
-  Neutral: Minus,
+// Left border accent by bias
+const BIAS_BORDER: Record<string, string> = {
+  Bullish: 'border-l-2 border-l-green-500/60',
+  Bearish: 'border-l-2 border-l-red-500/60',
+  Neutral: 'border-l-2 border-l-amber-500/40',
+};
+
+const TAB_CONTEXT: Record<string, string> = {
+  FOREX: 'Top forex pairs by daily volume · Bias updates at 06:00 UTC',
+  CRYPTO: 'Top crypto pairs to watch today · Spot trading signals',
+  STOCKS: 'Most watched stocks today · AI-powered momentum signals',
+  WATCHLIST: 'Your personalised watchlist · Sign in to save pairs',
 };
 
 type Tab = 'FOREX' | 'CRYPTO' | 'STOCKS' | 'WATCHLIST';
@@ -54,8 +55,7 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
   }, [isLoggedIn]);
 
   const toggleWatch = useCallback(async (e: React.MouseEvent, symbol: string) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     if (!isLoggedIn || toggling) return;
     setToggling(symbol);
     const inList = watchlist.includes(symbol);
@@ -87,15 +87,10 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
         <h2 className="text-sm font-semibold mr-4">All Markets</h2>
         <div className="flex items-center gap-0.5">
           {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
+            <button key={t} onClick={() => setTab(t)}
               className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wide transition-all ${
-                tab === t
-                  ? 'bg-teal/15 text-teal border border-teal/25'
-                  : 'text-slate-600 hover:text-slate-300'
-              }`}
-            >
+                tab === t ? 'bg-teal/15 text-teal border border-teal/25' : 'text-slate-600 hover:text-slate-300'
+              }`}>
               {t}
               {t === 'WATCHLIST' && watchlist.length > 0 && (
                 <span className="ml-1 text-teal/60">{watchlist.length}</span>
@@ -103,6 +98,11 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Context subtitle */}
+      <div className="px-5 py-1.5 bg-white/[0.015] border-b border-surface-border/40">
+        <p className="text-[10px] text-slate-600">{TAB_CONTEXT[tab]}</p>
       </div>
 
       {/* Column headers */}
@@ -118,7 +118,9 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
       <div>
         {filtered.length === 0 ? (
           <div className="px-5 py-8 text-center text-xs text-slate-600">
-            {tab === 'WATCHLIST' ? 'Star markets to add them here' : 'No markets'}
+            {tab === 'WATCHLIST'
+              ? isLoggedIn ? 'Star markets above to add them here' : 'Sign in to create your watchlist'
+              : 'No markets'}
           </div>
         ) : (
           filtered.map((market, i) => {
@@ -128,15 +130,14 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
             const changePos = (price?.change_percent ?? 0) >= 0;
             const inWatch = watchlist.includes(market.symbol);
             const BiasIcon = bias ? BIAS_ICON[bias] : null;
+            const biasBorder = bias ? BIAS_BORDER[bias] : 'border-l-2 border-l-transparent';
 
             return (
-              <Link
-                key={market.symbol}
-                href={`/dashboard/${market.symbol.toLowerCase()}`}
+              <Link key={market.symbol} href={`/dashboard/${market.symbol.toLowerCase()}`}
                 className={`grid grid-cols-[2fr_1fr_1fr_1fr_32px] gap-2 items-center px-5 py-0 min-h-[40px] hover:bg-white/[0.03] transition-colors group ${
                   i % 2 === 1 ? 'bg-white/[0.015]' : ''
-                }`}
-              >
+                } ${biasBorder}`}>
+
                 {/* Symbol */}
                 <div className="flex items-center gap-2">
                   <span className="text-sm w-6 text-center shrink-0">{FLAGS[market.symbol] ?? '💱'}</span>
@@ -149,7 +150,7 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
                 {/* Price */}
                 <div className="text-right">
                   {price?.loading ? (
-                    <div className="h-3 w-16 bg-white/8 rounded animate-pulse ml-auto" />
+                    <div className="h-3 w-16 bg-white/10 rounded animate-pulse ml-auto" />
                   ) : (
                     <span className="text-xs font-mono font-semibold text-slate-200">
                       {formatPrice(price?.price ?? 0, market.symbol)}
@@ -160,7 +161,7 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
                 {/* 24h change */}
                 <div className="text-right">
                   {price?.loading ? (
-                    <div className="h-3 w-10 bg-white/8 rounded animate-pulse ml-auto" />
+                    <div className="h-3 w-10 bg-white/10 rounded animate-pulse ml-auto" />
                   ) : (
                     <span className={`text-xs font-mono font-semibold ${changePos ? 'text-green-400' : 'text-red-400'}`}>
                       {changePos ? '+' : ''}{(price?.change_percent ?? 0).toFixed(2)}%
@@ -170,33 +171,23 @@ export function AllMarketsTable({ markets, analyses, prices, isLoggedIn }: Props
 
                 {/* Bias */}
                 <div className="flex items-center justify-end gap-1">
-                  {bias ? (
-                    <>
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${BIAS_DOT[bias]}`} />
-                      {BiasIcon && <BiasIcon className={`w-3 h-3 ${
-                        bias === 'Bullish' ? 'text-green-400' : bias === 'Bearish' ? 'text-red-400' : 'text-amber-400'
-                      }`} />}
-                    </>
+                  {bias && BiasIcon ? (
+                    <BiasIcon className={`w-3.5 h-3.5 ${BIAS_COLOR[bias]}`} />
                   ) : (
                     <span className="text-[10px] text-slate-700">—</span>
                   )}
                 </div>
 
-                {/* Star */}
-                <button
-                  onClick={(e) => toggleWatch(e, market.symbol)}
-                  className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
-                    inWatch
-                      ? 'text-amber-400'
-                      : 'text-slate-700 hover:text-slate-400 opacity-0 group-hover:opacity-100'
-                  } ${!isLoggedIn ? 'hidden' : ''}`}
-                  title={inWatch ? 'Remove from watchlist' : 'Add to watchlist'}
-                >
-                  <Star className="w-3.5 h-3.5" fill={inWatch ? 'currentColor' : 'none'} />
-                </button>
-
-                {!isLoggedIn && (
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-700 group-hover:text-slate-500 opacity-0 group-hover:opacity-100 transition-all" />
+                {/* Star / arrow */}
+                {isLoggedIn ? (
+                  <button onClick={(e) => toggleWatch(e, market.symbol)}
+                    className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
+                      inWatch ? 'text-amber-400' : 'text-slate-700 hover:text-slate-400 opacity-0 group-hover:opacity-100'
+                    }`} title={inWatch ? 'Remove from watchlist' : 'Add to watchlist'}>
+                    <Star className="w-3.5 h-3.5" fill={inWatch ? 'currentColor' : 'none'} />
+                  </button>
+                ) : (
+                  <span />
                 )}
               </Link>
             );

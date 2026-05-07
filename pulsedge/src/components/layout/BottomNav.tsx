@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, BarChart2, Calendar, MessageSquare, User } from 'lucide-react';
+import { Home, BarChart2, Newspaper, Calendar, MessageSquare } from 'lucide-react';
 
 const NAV = [
   { href: '/dashboard', label: 'Home', icon: Home, exact: true },
   { href: '/dashboard#markets', label: 'Markets', icon: BarChart2, exact: false },
-  { href: '/dashboard#calendar', label: 'Calendar', icon: Calendar, exact: false },
+  { href: '/news', label: 'News', icon: Newspaper, exact: true },
+  { href: '/calendar', label: 'Calendar', icon: Calendar, exact: true },
   { href: '/dashboard#community', label: 'Community', icon: MessageSquare, exact: false },
-  { href: '/profile', label: 'Profile', icon: User, exact: true },
 ];
 
 export function BottomNav() {

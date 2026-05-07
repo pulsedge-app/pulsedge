@@ -19,23 +19,30 @@ function timeAgo(iso: string): string {
 async function fetchMessages(
   client: ReturnType<typeof createClient>,
   userId: string | null,
-  setMessages: React.Dispatch<React.SetStateAction<CommunityMessage[]>>,
-  bottomRef: React.RefObject<HTMLDivElement>
-) {
-  const { data } = await client
+): Promise<CommunityMessage[]> {
+  const { data, error } = await client
     .from('community_messages')
     .select('*')
     .order('created_at', { ascending: true })
     .limit(50);
 
-  if (!data) return;
+  if (error) {
+    console.error('[CommunityFeed] fetchMessages error:', error.message, error.code);
+    return [];
+  }
+  if (!data || data.length === 0) return [];
 
   const messages = data as CommunityMessage[];
 
-  const { data: reactions } = await client
+  // Skip reaction fetch if no messages to avoid IN([]) error
+  const { data: reactions, error: rxError } = await client
     .from('community_reactions')
     .select('message_id, user_id')
     .in('message_id', messages.map((m) => m.id));
+
+  if (rxError) {
+    console.error('[CommunityFeed] reactions error:', rxError.message);
+  }
 
   const counts: Record<string, number> = {};
   const userReacted: Record<string, boolean> = {};
@@ -44,14 +51,11 @@ async function fetchMessages(
     if (userId && r.user_id === userId) userReacted[r.message_id] = true;
   });
 
-  const enriched = messages.map((m) => ({
+  return messages.map((m) => ({
     ...m,
     reaction_count: counts[m.id] ?? 0,
     user_reacted: userReacted[m.id] ?? false,
   }));
-
-  setMessages(enriched);
-  setTimeout(() => bottomRef.current?.scrollIntoView(), 50);
 }
 
 function Avatar({ username, isBot }: { username: string; isBot: boolean }) {
@@ -98,34 +102,22 @@ function MessageRow({
           <p className="text-xs text-slate-400 leading-relaxed mt-0.5 break-words">{msg.message}</p>
         )}
 
-        {/* Image attachment */}
         {msg.image_url && (
           <button
             onClick={() => onImageClick(msg.image_url!)}
             className="mt-1.5 block rounded-lg overflow-hidden border border-white/10 hover:border-white/20 transition-colors"
           >
-            <Image
-              src={msg.image_url}
-              alt="Attachment"
-              width={200}
-              height={120}
-              className="object-cover max-h-[120px] w-auto"
-              unoptimized
-            />
+            <Image src={msg.image_url} alt="Attachment" width={200} height={120}
+              className="object-cover max-h-[120px] w-auto" unoptimized />
           </button>
         )}
 
-        {/* Reaction */}
         <div className="flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={() => canReact && onReact(msg.id)}
             disabled={!canReact}
             className={`flex items-center gap-1 text-[10px] transition-colors disabled:cursor-default ${
-              msg.user_reacted
-                ? 'text-red-400'
-                : canReact
-                ? 'text-slate-600 hover:text-red-400'
-                : 'text-slate-700'
+              msg.user_reacted ? 'text-red-400' : canReact ? 'text-slate-600 hover:text-red-400' : 'text-slate-700'
             }`}
           >
             <Heart className="w-3 h-3" fill={msg.user_reacted ? 'currentColor' : 'none'} />
@@ -139,6 +131,7 @@ function MessageRow({
 
 export function CommunityFeed() {
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [input, setInput] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [sending, setSending] = useState(false);
@@ -157,9 +150,7 @@ export function CommunityFeed() {
   // Auth
   useEffect(() => {
     authClient.auth.getUser().then(({ data }) => setUser(data.user));
-    const { data: listener } = authClient.auth.onAuthStateChange((_e, s) =>
-      setUser(s?.user ?? null)
-    );
+    const { data: listener } = authClient.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null));
     return () => listener.subscription.unsubscribe();
   }, [authClient]);
 
@@ -168,31 +159,37 @@ export function CommunityFeed() {
     const supabase = createClient();
     const userId = user?.id ?? null;
 
-    fetchMessages(supabase, userId, setMessages, bottomRef).then(() => {
-      // Trigger seed if no messages after initial fetch
-      setMessages((prev) => {
-        if (prev.length === 0) {
-          fetch('/api/community/seed', { method: 'POST' })
-            .then(() => fetchMessages(supabase, userId, setMessages, bottomRef))
-            .catch(() => {});
+    setIsLoading(true);
+    fetchMessages(supabase, userId).then(async (msgs) => {
+      if (msgs.length === 0) {
+        // Try to seed, then re-fetch
+        try {
+          await fetch('/api/community/seed', { method: 'POST' });
+          const seeded = await fetchMessages(supabase, userId);
+          setMessages(seeded);
+        } catch {
+          setMessages([]);
         }
-        return prev;
-      });
+      } else {
+        setMessages(msgs);
+        setTimeout(() => bottomRef.current?.scrollIntoView(), 50);
+      }
+      setIsLoading(false);
+    }).catch((err) => {
+      console.error('[CommunityFeed] initial load failed:', err);
+      setIsLoading(false);
     });
 
     const channel = supabase
       .channel('community_feed')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'community_messages' },
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_messages' },
         (payload) => {
           setMessages((prev) => [
             ...prev,
             { ...(payload.new as CommunityMessage), reaction_count: 0, user_reacted: false },
           ]);
           setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-        }
-      )
+        })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -202,21 +199,14 @@ export function CommunityFeed() {
   useEffect(() => {
     const supabase = createClient();
     const presenceKey = user?.id ?? `anon-${Math.random().toString(36).slice(2, 8)}`;
-
     const channel = supabase.channel('community_presence', {
       config: { presence: { key: presenceKey } },
     });
-
     channel
-      .on('presence', { event: 'sync' }, () => {
-        setOnlineCount(Object.keys(channel.presenceState()).length);
-      })
+      .on('presence', { event: 'sync' }, () => setOnlineCount(Object.keys(channel.presenceState()).length))
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ online_at: new Date().toISOString() });
-        }
+        if (status === 'SUBSCRIBED') await channel.track({ online_at: new Date().toISOString() });
       });
-
     return () => { supabase.removeChannel(channel); };
   }, [user?.id]);
 
@@ -259,27 +249,20 @@ export function CommunityFeed() {
     const text = input.trim();
     if ((!text && !pendingImage) || !canPost || sending) return;
     if (text.length > 280) { setError('Max 280 characters'); return; }
-
     setSending(true);
     setError('');
 
     let imageUrl: string | null = null;
-
     if (pendingImage && user) {
       setUploadingImage(true);
       const ext = pendingImage.name.split('.').pop() ?? 'jpg';
       const path = `${user.id}/${Date.now()}.${ext}`;
       const { error: uploadErr } = await authClient.storage
-        .from('community-images')
-        .upload(path, pendingImage, { contentType: pendingImage.type });
-
+        .from('community-images').upload(path, pendingImage, { contentType: pendingImage.type });
       if (uploadErr) {
         setError('Image upload failed. Try again.');
-        setSending(false);
-        setUploadingImage(false);
-        return;
+        setSending(false); setUploadingImage(false); return;
       }
-
       const { data: urlData } = authClient.storage.from('community-images').getPublicUrl(path);
       imageUrl = urlData.publicUrl;
       setUploadingImage(false);
@@ -287,20 +270,12 @@ export function CommunityFeed() {
 
     const username = user!.email?.split('@')[0] ?? 'anon';
     const { error: err } = await authClient.from('community_messages').insert({
-      user_id: user!.id,
-      username,
-      message: text,
-      is_bot: false,
+      user_id: user!.id, username, message: text, is_bot: false,
       ...(imageUrl ? { image_url: imageUrl } : {}),
     });
-
     setSending(false);
-    if (err) {
-      setError('Failed to send. Try again.');
-    } else {
-      setInput('');
-      clearImage();
-    }
+    if (err) setError('Failed to send. Try again.');
+    else { setInput(''); clearImage(); }
   }, [input, pendingImage, canPost, sending, user, authClient, clearImage]);
 
   function handleKey(e: React.KeyboardEvent) {
@@ -317,8 +292,7 @@ export function CommunityFeed() {
           <div className="ml-auto flex items-center gap-2">
             {onlineCount > 0 && (
               <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                <Users className="w-3 h-3" />
-                {onlineCount}
+                <Users className="w-3 h-3" />{onlineCount}
               </span>
             )}
             <span className="flex items-center gap-1 text-[10px] text-green-400">
@@ -330,20 +304,30 @@ export function CommunityFeed() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto py-2 space-y-0.5 min-h-[200px]">
-          {messages.length === 0 && (
-            <div className="px-4 py-8 text-center text-xs text-slate-600">
-              Loading…
+          {isLoading ? (
+            <div className="px-4 py-8 text-center space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex gap-2.5 px-3 animate-pulse">
+                  <div className="w-6 h-6 rounded-full bg-white/10 shrink-0" />
+                  <div className="flex-1 space-y-1.5 py-1">
+                    <div className="h-2.5 bg-white/8 rounded w-1/3" />
+                    <div className="h-2 bg-white/5 rounded w-full" />
+                    <div className="h-2 bg-white/4 rounded w-2/3" />
+                  </div>
+                </div>
+              ))}
             </div>
+          ) : messages.length === 0 ? (
+            <div className="px-4 py-8 text-center">
+              <p className="text-sm text-slate-400 mb-1">Be the first to post!</p>
+              <p className="text-xs text-slate-600">Share your market view with the community.</p>
+            </div>
+          ) : (
+            messages.map((msg) => (
+              <MessageRow key={msg.id} msg={msg} canReact={canPost}
+                onReact={toggleReaction} onImageClick={setLightboxUrl} />
+            ))
           )}
-          {messages.map((msg) => (
-            <MessageRow
-              key={msg.id}
-              msg={msg}
-              canReact={canPost}
-              onReact={toggleReaction}
-              onImageClick={setLightboxUrl}
-            />
-          ))}
           <div ref={bottomRef} />
         </div>
 
@@ -354,10 +338,8 @@ export function CommunityFeed() {
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
                 Verify your email to post.{' '}
-                <button
-                  className="underline hover:no-underline"
-                  onClick={() => authClient.auth.resend({ type: 'signup', email: user.email! })}
-                >
+                <button className="underline hover:no-underline"
+                  onClick={() => authClient.auth.resend({ type: 'signup', email: user.email! })}>
                   Resend
                 </button>
               </span>
@@ -378,65 +360,35 @@ export function CommunityFeed() {
                   <AlertCircle className="w-3 h-3" /> {error}
                 </p>
               )}
-
-              {/* Image preview */}
               {imagePreview && (
                 <div className="relative inline-block">
-                  <Image
-                    src={imagePreview}
-                    alt="Preview"
-                    width={80}
-                    height={60}
-                    className="rounded-lg border border-white/10 object-cover"
-                    unoptimized
-                  />
-                  <button
-                    onClick={clearImage}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-slate-700 rounded-full flex items-center justify-center text-slate-300 hover:text-white"
-                  >
+                  <Image src={imagePreview} alt="Preview" width={80} height={60}
+                    className="rounded-lg border border-white/10 object-cover" unoptimized />
+                  <button onClick={clearImage}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-slate-700 rounded-full flex items-center justify-center text-slate-300 hover:text-white">
                     <X className="w-2.5 h-2.5" />
                   </button>
                 </div>
               )}
-
               <div className="flex gap-2">
-                {/* Attach button */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!canPost || uploadingImage}
-                  className="text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-40 shrink-0 self-center"
-                  title="Attach image (max 5MB)"
-                >
+                <button onClick={() => fileInputRef.current?.click()} disabled={!canPost || uploadingImage}
+                  className="text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-40 shrink-0 self-center" title="Attach image (max 5MB)">
                   <Paperclip className="w-4 h-4" />
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                />
-
-                <textarea
-                  value={input}
-                  onChange={(e) => { setInput(e.target.value); setError(''); }}
+                <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden" onChange={handleFileSelect} />
+                <textarea value={input} onChange={(e) => { setInput(e.target.value); setError(''); }}
                   onKeyDown={handleKey}
                   placeholder={canPost ? 'Share your thoughts… (Enter to send)' : 'Verify email to post'}
-                  disabled={!canPost}
-                  rows={1}
-                  maxLength={280}
+                  disabled={!canPost} rows={1} maxLength={280}
                   className="input text-xs py-2 resize-none flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ minHeight: '36px', maxHeight: '80px' }}
-                />
-                <button
-                  onClick={sendMessage}
+                  style={{ minHeight: '36px', maxHeight: '80px' }} />
+                <button onClick={sendMessage}
                   disabled={!canPost || (!input.trim() && !pendingImage) || sending || uploadingImage}
-                  className="btn-primary px-3 py-2 shrink-0 disabled:opacity-40"
-                >
+                  className="btn-primary px-3 py-2 shrink-0 disabled:opacity-40">
                   <Send className={`w-3.5 h-3.5 ${(sending || uploadingImage) ? 'animate-pulse' : ''}`} />
                 </button>
               </div>
-
               {input.length > 240 && (
                 <p className={`text-[10px] text-right ${input.length > 280 ? 'text-red-400' : 'text-slate-500'}`}>
                   {input.length}/280
@@ -453,25 +405,15 @@ export function CommunityFeed() {
         </div>
       </aside>
 
-      {/* Lightbox modal */}
+      {/* Lightbox */}
       {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setLightboxUrl(null)}
-        >
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}>
           <div className="relative max-w-3xl max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
-            <Image
-              src={lightboxUrl}
-              alt="Full size"
-              width={900}
-              height={600}
-              className="object-contain rounded-xl max-h-[80vh] w-auto"
-              unoptimized
-            />
-            <button
-              onClick={() => setLightboxUrl(null)}
-              className="absolute top-3 right-3 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center text-white hover:bg-black/80"
-            >
+            <Image src={lightboxUrl} alt="Full size" width={900} height={600}
+              className="object-contain rounded-xl max-h-[80vh] w-auto" unoptimized />
+            <button onClick={() => setLightboxUrl(null)}
+              className="absolute top-3 right-3 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center text-white hover:bg-black/80">
               <X className="w-4 h-4" />
             </button>
           </div>

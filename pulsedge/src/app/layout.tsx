@@ -6,10 +6,15 @@ import { Header } from '@/components/layout/Header';
 import { BottomNav } from '@/components/layout/BottomNav';
 
 export const metadata: Metadata = {
-  title: 'Pulsedge — Institutional Market Intelligence',
+  title: 'Pulsedge · AI Trading Intelligence',
   description:
-    'AI-powered daily market analysis for forex, crypto, and equities. Institutional bias, key levels, and precision entry plans.',
-  keywords: ['trading', 'market analysis', 'forex', 'crypto', 'AI', 'technical analysis'],
+    'Institutional-grade AI market intelligence for forex, crypto, and equities. Daily bias, precision entry plans, and real-time economic calendar — free.',
+  keywords: ['trading', 'market analysis', 'forex', 'crypto', 'AI', 'technical analysis', 'economic calendar', 'trading signals'],
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
