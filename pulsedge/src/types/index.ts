@@ -9,6 +9,7 @@ export interface DailyAnalysis {
   key_levels: KeyLevel[];
   entry_zones: EntryZone[];
   invalidation_points: InvalidationPoint[];
+  confidence_score: number;
   price_at_analysis: number | null;
   created_at: string;
 }
