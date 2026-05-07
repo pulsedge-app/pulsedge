@@ -16,7 +16,7 @@ Keep responses concise and professional. No hype, no guarantees.`;
 interface AnalysisInput {
   symbol: string;
   label: string;
-  currentPrice: number | null;
+  currentPrice: number;
   bars: OHLCVBar[];
 }
 
@@ -25,21 +25,14 @@ export async function generateDailyAnalysis(
 ): Promise<Omit<DailyAnalysis, 'id' | 'created_at' | 'date'>> {
   const { symbol, label, currentPrice, bars } = input;
 
-  const hasBars = bars.length > 0;
-  const recentBars = hasBars ? bars.slice(0, 5) : [];
-
-  const priceContext = currentPrice != null
-    ? `Current price: ${currentPrice}`
-    : `Current price: Not available (use your market knowledge for ${symbol})`;
-
-  const barContext = hasBars
-    ? `Recent OHLCV (last ${recentBars.length} days):
-${recentBars.map((b) => `${b.datetime}: O:${b.open} H:${b.high} L:${b.low} C:${b.close}`).join('\n')}
-5-day range: H: ${Math.max(...recentBars.map((b) => b.high)).toFixed(4)} / L: ${Math.min(...recentBars.map((b) => b.low)).toFixed(4)}`
-    : `No OHLCV data available. Use your knowledge of ${label} (${symbol}) market structure, recent macro context, and typical price behavior to provide analysis.`;
+  const recentBars = bars.slice(0, 5);
+  const priceRange = `H: ${Math.max(...recentBars.map((b) => b.high)).toFixed(4)} / L: ${Math.min(...recentBars.map((b) => b.low)).toFixed(4)}`;
+  const barSummary = recentBars
+    .map((b) => `${b.datetime}: O:${b.open} H:${b.high} L:${b.low} C:${b.close}`)
+    .join('\n');
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-7',
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [
@@ -47,14 +40,15 @@ ${recentBars.map((b) => `${b.datetime}: O:${b.open} H:${b.high} L:${b.low} C:${b
         role: 'user',
         content: `Analyze ${label} (${symbol}) for today's trading session.
 
-${priceContext}
-${barContext}
+Current price: ${currentPrice}
+Recent OHLCV (last 5 days):
+${barSummary}
+5-day range: ${priceRange}
 
-Respond ONLY with valid JSON in this exact structure (no markdown, no explanation, just the JSON object):
+Respond ONLY with valid JSON in this exact structure:
 {
   "bias": "Bullish" | "Bearish" | "Neutral",
   "reasoning": "2-3 sentence explanation of the bias based on price action and structure",
-  "confidence_score": <integer 0-100>,
   "key_levels": [
     {"price": number, "label": "string", "type": "support" | "resistance" | "pivot"}
   ],
@@ -79,19 +73,17 @@ Provide 2-4 key levels, 1-2 entry zones, and 1-2 invalidation points.`,
 
   const text = message.content[0].type === 'text' ? message.content[0].text : '';
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`No JSON in Claude response for ${symbol}. Got: ${text.slice(0, 200)}`);
+  if (!jsonMatch) throw new Error('No JSON in Claude response');
 
   const parsed = JSON.parse(jsonMatch[0]);
-
   return {
     symbol,
     bias: parsed.bias as Bias,
     reasoning: parsed.reasoning,
-    confidence_score: typeof parsed.confidence_score === 'number' ? parsed.confidence_score : 70,
     key_levels: parsed.key_levels ?? [],
     entry_zones: parsed.entry_zones ?? [],
     invalidation_points: parsed.invalidation_points ?? [],
-    price_at_analysis: currentPrice ?? 0,
+    price_at_analysis: currentPrice,
   };
 }
 
